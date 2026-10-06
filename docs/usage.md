@@ -519,7 +519,7 @@ valeurs converties ; le fichier `.npz`/HDF5/MAT garde en plus les volts bruts et
 conversion réversible).
 
 **Vue par défaut = toute la mémoire captée, pas l'écran physique du scope** — vérifié
-normal sur matériel, cf. README § Pièges. Comme `fetch` récupère toujours toute la
+normal sur matériel, cf. [README.fr.md](README.fr.md) § Pièges. Comme `fetch` récupère toujours toute la
 mémoire (voir plus haut), la portée temporelle affichée par défaut peut largement
 dépasser `TDIV × 14 divisions` (ex. 7 ms de mémoire contre ~2,8 ms d'écran pour
 `TDIV=200US`) : un signal bref semble alors écrasé près de `t=0`. Ce n'est pas un

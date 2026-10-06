@@ -16,11 +16,11 @@ et ne change rien.
 Une seule ligne, à coller dans un terminal PowerShell. Elle :
 - installe Git et Python 3.12 s'ils manquent ;
 - recharge le PATH ;
-- clone le dépôt dans `%USERPROFILE%\PEOscillo` ;
+- clone le dépôt dans `%USERPROFILE%\PEO-showcase` ;
 - lance `install.ps1`.
 
 ```powershell
-winget install -e --id Git.Git; winget install -e --id Python.Python.3.12; $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git clone https://github.com/bdv89/PEOscillo.git "$HOME\PEOscillo"; cd "$HOME\PEOscillo"; powershell -ExecutionPolicy Bypass -File .\install.ps1
+winget install -e --id Git.Git; winget install -e --id Python.Python.3.12; $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git clone https://github.com/bdv89/PEO-showcase.git "$HOME\PEO-showcase"; cd "$HOME\PEO-showcase"; powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 - Dépôt public : aucun compte GitHub n'est nécessaire.
@@ -32,7 +32,7 @@ winget install -e --id Git.Git; winget install -e --id Python.Python.3.12; $env:
 ## Mettre à jour
 
 ```powershell
-cd "$HOME\PEOscillo"
+cd "$HOME\PEO-showcase"
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 3. **Dépendances** (`requirements.txt`) : pip n'installe que ce qui manque ou a changé.
 4. **Dossier autonome** `Oscilloscope\` : son code (`scope\`, `launcher.py`) est aligné sur
    les sources. Son Python embarqué n'est pas modifié. Si une dépendance change, il faut
-   reconstruire le dossier avec `packaging\build_embed.py` (voir README).
+   reconstruire le dossier avec `packaging\build_embed.py` (voir [docs/README.fr.md](docs/README.fr.md)).
 5. **Contrôles** : `launcher.py --check` avec chaque Python ; il doit afficher `scope OK`.
 
 ## En cas de problème
@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
   interface réseau après une rafale de réglages. **Redémarrer l'oscilloscope**, fermer tout
   autre logiciel connecté au scope (EasyScopeX, une autre fenêtre PEOscillo), puis tester :
   ```powershell
-  cd "$HOME\PEOscillo"
+  cd "$HOME\PEO-showcase"
   .\.venv\Scripts\python.exe -m scope.cli idn 10.11.13.220            # VXI-11
   .\.venv\Scripts\python.exe -m scope.cli --socket idn 10.11.13.220   # socket (celui de la GUI)
   ```
@@ -70,9 +70,6 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 - **« l'exécution de scripts est désactivée »** : lancer le script avec
   `powershell -ExecutionPolicy Bypass -File .\install.ps1`, comme ci-dessus. Ce réglage ne
   vaut que pour cette commande.
-- **`git pull` refusé** par `install.ps1` (« Not possible to fast-forward ») : l'historique publié a
-  été corrigé. Une seule fois, dans le dossier du projet : `git fetch; git reset --hard origin/main`,
-  puis relancer `install.ps1`. Attention : efface les modifications locales non commitées du code.
 - **« Python 3.12 introuvable »** : `winget install Python.Python.3.12`, puis relancer.
 - **Ne pas lancer `py launcher.py` directement** : `py` choisit la version de Python la plus
   récente installée, qui peut être une version alpha. Passer par `install.ps1`, puis par

@@ -25,3 +25,13 @@ inspiration/repos/
 captures/
 PEO_*/
 resultats/
+
+# Sorties de la démo (re-traitement de examples/demo-data)
+examples/demo-data/resultats/
+
+# Instructions pour assistants IA et journaux de développement internes (locaux)
+CLAUDE.md
+standards/
+output/
+# ... sauf la série de démonstration synthétique (exception au motif PEO_*/ ci-dessus)
+!examples/demo-data/PEO_*/

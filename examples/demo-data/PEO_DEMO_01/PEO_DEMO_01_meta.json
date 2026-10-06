@@ -1,0 +1,77 @@
+{
+  "experiment_id": "PEO_DEMO_01",
+  "channels": [
+    "C2",
+    "C3"
+  ],
+  "rate": 2.0,
+  "per_seconds": 60.0,
+  "points": 2000,
+  "note": "SYNTHETIC demo data (examples/make_demo_data.py), not measured",
+  "captures": [
+    {
+      "index": 1,
+      "timestamp": 1000.0
+    },
+    {
+      "index": 2,
+      "timestamp": 1030.0
+    },
+    {
+      "index": 3,
+      "timestamp": 1060.0
+    },
+    {
+      "index": 4,
+      "timestamp": 1090.0
+    },
+    {
+      "index": 5,
+      "timestamp": 1120.0
+    },
+    {
+      "index": 6,
+      "timestamp": 1150.0
+    },
+    {
+      "index": 7,
+      "timestamp": 1180.0
+    },
+    {
+      "index": 8,
+      "timestamp": 1210.0
+    },
+    {
+      "index": 9,
+      "timestamp": 1240.0
+    },
+    {
+      "index": 10,
+      "timestamp": 1270.0
+    },
+    {
+      "index": 11,
+      "timestamp": 1300.0
+    },
+    {
+      "index": 12,
+      "timestamp": 1330.0
+    },
+    {
+      "index": 13,
+      "timestamp": 1360.0
+    },
+    {
+      "index": 14,
+      "timestamp": 1390.0
+    },
+    {
+      "index": 15,
+      "timestamp": 1420.0
+    },
+    {
+      "index": 16,
+      "timestamp": 1450.0
+    }
+  ]
+}
