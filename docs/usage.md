@@ -562,8 +562,16 @@ des plateaux, fréquence, rapport cyclique). Active si les voies choisies dans
 série tourne sans analyse, message dans la barre d'état) ; au démarrage de
 l'enregistrement, l'onglet Analyse s'affiche automatiquement **si la fiche est complète**
 (sinon on reste sur Mesure, cf. alerte ci-dessous). Les unités des voies sont converties en V et A avant analyse
-(`mA` → A, `kV` → V…), car les seuils sont en V/A (I > 1 A, U > 40 V) ; une voie U qui
-n'est pas une tension (ou I pas un courant) est signalée à chaque capture. Fichiers
+(`mA` → A, `kV` → V…) pour que les résultats soient en V et A ; une voie U qui
+n'est pas une tension (ou I pas un courant) est signalée à chaque capture. **Aucun seuil
+n'est en A ou en V** : signal et plateaux sont jugés par rapport au **bruit de mesure** de
+chaque voie (le plus grand du pas de quantification du scope, facteur de sonde compris,
+et de l'écart-type du bruit) — même résultat que le courant soit enregistré en mA ou en
+A, la sonde déclarée ×10 ou ×100 (seules les valeurs changent d'échelle). Il y a signal
+si l'écart entre les niveaux haut et bas de I dépasse 5 fois ce bruit (`MIN_SNR`) ; une
+polarité (plateaux + ou −, de I ou de U) n'est découpée que si son niveau dépasse lui aussi
+5 fois le bruit. Aux calibres des essais PEO_N_* (pas de 0,2 A et 8 V), cela revient aux
+anciens seuils 1 A et 40 V : résultats inchangés sur ces essais. Fichiers
 écrits dans le dossier de la série :
 
 | Fichier | Quand | Contenu |
@@ -580,7 +588,9 @@ qui **ne dérive pas**. Une capture aberrante isolée est écartée de chaque fe
 « indéterminé » quand U et I sont tous deux constants (rien ne permet de trancher).
 
 **Anomalies** (colonne `flag` du CSV ; toute capture non `ok` est exclue de U(t), I(t) et
-du mode de pilotage) : `no_signal` (I < 1 A), `U_absent` (I circule, plateau U < 20 V),
+du mode de pilotage) : `no_signal` (écart haut-bas de I < 5 × son bruit de mesure : bruit
+ou quantification seuls), `U_absent` (I circule, plateau U < 2,5 × le bruit de U — 20 V au
+pas de 8 V),
 `U_dephase` (U non synchrone de I), `no_plateau`, et — en fin de série, par comparaison
 aux captures voisines — `U_saut` (U s'écarte de plus de 20 % de ses voisines alors que I
 ne bouge pas : chute ponctuelle). Une **rupture** durable de U à I constant (> 25 % d'une

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scope import plateaux
+from scope import experiment, plateaux
 from scope.waveform import Waveform
 
 FREQ, DUTY = 500.0, 0.4
@@ -266,6 +266,125 @@ def test_chopped_current_falls_back_to_voltage():
     assert row["ref"] == "U" and row["n_pulses_pos"] == 4
 
 
+# --- indépendance de l'échelle et des unités (mA/A, sonde x10/x100) ----------------------
+def quantize(x, lsb, seed=0):
+    """Chaîne de mesure d'un scope 8 bits : bruit ±1 LSB puis quantification au pas ``lsb``."""
+    noise = np.random.default_rng(seed).normal(0, 0.6 * lsb, x.size)
+    return np.round((x + noise) / lsb) * lsb
+
+
+def peo_bipolar_test_cell(freq=250.0, seed=0):
+    """Capture type ``test_2026-10-06_06`` (en V et A) : U créneau +300 V / -24 V (rapport
+    cyclique 0,5) avec suroscillations aux fronts, quantifié à 4 V ; I de l'ordre du mA,
+    en opposition de phase (-0,5 mA / +0,3 mA), bruit 0,2 mA, pointes capacitives aux
+    fronts (-7 mA / +3,7 mA), quantifié à 0,08 mA."""
+    rng = np.random.default_rng(seed)
+    t = -0.014 + 14e-6 * np.arange(2001)
+    phase = ((t + 0.0125) * freq) % 1.0
+    on = phase < 0.5
+    U = np.where(on, 300.0, -24.0)
+    I = np.where(on, -0.5e-3, 0.3e-3) + rng.normal(0, 0.2e-3, t.size)
+    for k in np.flatnonzero(np.diff(on.astype(int))) + 1:
+        rising = on[k]
+        ring = np.exp(-np.arange(40) / 12.0) * np.cos(np.arange(40) / 2.0)
+        n = min(40, t.size - k)
+        U[k:k + n] += (100.0 if rising else -190.0) * ring[:n]
+        I[k:k + 3] = -7e-3 if rising else 3.7e-3
+    return t, quantize(U, 4.0, seed), quantize(I, 0.08e-3, seed + 1)
+
+
+def _runs(trace):
+    return trace[3], trace[4]
+
+
+@pytest.mark.parametrize("scale", [1e-3, 1e-6, 1e3])
+def test_same_current_in_other_unit_gives_same_plateaux(scale):
+    t, U, I = peo_unipolar()
+    I = quantize(I, 0.2)
+    ref_row, ref_trace = plateaux.analyse_arrays(t, U, I)
+    row, trace = plateaux.analyse_arrays(t, U, I * scale)
+    assert ref_row["flag"] == row["flag"] == "ok"
+    assert _runs(trace) == _runs(ref_trace)
+    assert row["I_med_pos"] == pytest.approx(ref_row["I_med_pos"] * scale)
+    assert row["freq_Hz"] == pytest.approx(ref_row["freq_Hz"])
+
+
+@pytest.mark.parametrize("scale", [0.1, 10.0])
+def test_same_voltage_with_other_probe_factor_gives_same_plateaux(scale):
+    # sonde x10 au lieu de x100 (ou l'inverse) mal déclarée : même découpage, U à l'échelle
+    t, U, I = peo_unipolar(spike=False)
+    I = I * np.random.default_rng(2).uniform(0, 1, t.size) ** 3  # découpe sur U
+    ref_row, ref_trace = plateaux.analyse_arrays(t, U, I)
+    row, trace = plateaux.analyse_arrays(t, U * scale, I)
+    assert ref_row["ref"] == row["ref"] == "U" and row["flag"] == "ok"
+    assert _runs(trace) == _runs(ref_trace)
+    assert row["U_med_pos"] == pytest.approx(ref_row["U_med_pos"] * scale)
+
+
+@pytest.mark.parametrize("scale", [1.0, 1e-3, 1e3])
+def test_bipolar_square_scaled_keeps_negative_plateaux(scale):
+    t, U, I = square(bipolar=True, noise=0.01)
+    row, _ = plateaux.analyse_arrays(t, U, I * scale)
+    assert row["flag"] == "ok" and row["n_pulses_neg"] >= 12
+    assert row["I_med_neg"] == pytest.approx(-I_ON * scale, rel=0.02)
+
+
+def noise_only(kind, scale, seed=0):
+    """Captures sans signal : bruit blanc, bruit de quantification (1 à 2 LSB, comme les
+    captures sans courant des PEO_N_*), offset + bruit. ``scale`` = unité (A, mA…)."""
+    rng = np.random.default_rng(seed)
+    n = 2001
+    x = {"gauss": rng.normal(0, 1.0, n),
+         "lsb_toggle": rng.choice([0.0, 1.0], n, p=[0.85, 0.15]),
+         "lsb_3_levels": rng.choice([0.0, 1.0, 2.0], n, p=[0.1, 0.75, 0.15]),
+         "offset": 3.0 + rng.choice([-1.0, 0.0, 1.0], n, p=[0.2, 0.6, 0.2])}[kind]
+    return -0.014 + 14e-6 * np.arange(n), x * scale
+
+
+@pytest.mark.parametrize("kind", ["gauss", "lsb_toggle", "lsb_3_levels", "offset"])
+@pytest.mark.parametrize("scale", [0.2, 0.08e-3, 50.0])
+def test_noise_only_is_no_signal_at_any_scale(kind, scale):
+    t, I = noise_only(kind, scale)
+    _, U = noise_only("lsb_toggle", 8.0, seed=1)
+    row, traces = plateaux.analyse_arrays(t, U, I)
+    assert row["flag"] == "no_signal" and traces is None
+
+
+@pytest.mark.parametrize("scale_i", [1.0, 1e3])  # I en mA (enregistré) ou en A (voie mal réglée)
+def test_bipolar_test_cell_capture_is_analysed(scale_i):
+    t, U, I = peo_bipolar_test_cell()
+    row, trace = plateaux.analyse_arrays(t, U, I * scale_i)
+    assert row["flag"] == "ok" and row["ref"] == "U"
+    assert row["freq_Hz"] == pytest.approx(250, rel=0.02)
+    assert row["duty"] == pytest.approx(0.5, abs=0.05)
+    assert row["U_med_pos"] == pytest.approx(300, abs=8)
+    assert row["U_med_neg"] == pytest.approx(-24, abs=8)
+    assert row["n_pulses_pos"] >= 6 and row["n_pulses_neg"] >= 6
+    assert row["I_med_pos"] == pytest.approx(-0.5e-3 * scale_i, abs=0.1e-3 * scale_i)
+    assert row["I_med_neg"] == pytest.approx(0.3e-3 * scale_i, abs=0.1e-3 * scale_i)
+
+
+def test_silent_voltage_channel_is_flagged_at_any_scale():
+    # voie U muette (bruit d'1 LSB), sonde déclarée x1 au lieu de x100, courant en mA
+    t, _, I = peo_unipolar()
+    U = np.random.default_rng(1).choice([0.0, 0.08], t.size)
+    row, _ = plateaux.analyse_arrays(t, U, I * 1e-3)
+    assert row["flag"] == "U_absent"
+
+
+def test_control_label_shows_milliamp_currents():
+    row = {"index": 2, "t_s": 26.4, "flag": "ok", "U_med_pos": 300.0, "I_med_pos": -4.8e-4, "freq_Hz": 250.0}
+    label = plateaux.control_label(row, "essai")
+    assert "I = -0.00048 A" in label
+    big = plateaux.control_label({**row, "I_med_pos": 8.84}, "essai")
+    assert "I = 8.8 A" in big  # format inchangé pour les courants PEO habituels
+
+
+def test_summary_start_end_keeps_small_currents_readable():
+    assert plateaux.start_end(pd.Series([4.8e-4] * 4), plateaux.fmt_current) == "0.00048 -> 0.00048"
+    assert plateaux.start_end(pd.Series([10.8, 10.8, 10.9]), plateaux.fmt_current) == "10.8 -> 10.8"
+
+
 # --- mode de pilotage ------------------------------------------------------------------
 def mode_series(U, I):
     n = len(U)
@@ -333,24 +452,76 @@ def test_no_unused_cv_columns(tmp_path):
     assert "cv" not in header and not [k for k in summary if k.startswith("cv")]
 
 
-# --- non-régression sur une vraie série (dossier voisin du projet) ------------------------
-DATA = next((p for p in Path(__file__).resolve().parents if (p / "PEO_N_43").is_dir()), None)
+# --- non-régression sur de vraies séries (dossier ``samples`` voisin du projet) -----------
+# Lecture seule : les sorties vont dans tmp_path, jamais dans ``samples``.
+DATA = next((p / "samples" for p in Path(__file__).resolve().parents
+             if (p / "samples" / "PEO_N_43").is_dir()), None)
+# Résultats de référence figés : avec les données, hors dépôt (résultats d'essais non publiés)
+REFERENCE = DATA / "reference" if DATA else None
 
 
-def run_series(tmp_path, exp):
-    """Analyse un dossier PEO réel comme le ferait le script ; -> (synthèse, df)."""
-    folder = DATA / exp
-    meta = json.loads((folder / f"{exp}_meta.json").read_text())
+def run_series(tmp_path, exp, folder=None):
+    """Analyse un dossier de série réel comme le re-traitement (unités des colonnes
+    converties en V et A) ; -> (synthèse, df)."""
+    folder = folder or DATA / exp
+    meta = json.loads((folder / f"{exp}_meta.json").read_text(encoding="utf-8"))
+    columns = experiment.capture_columns(meta)
     t0, rows = meta["captures"][0]["timestamp"], []
     for cap in meta["captures"]:
         path = folder / f"{exp}_{cap['index']:04d}.csv"
         if path.exists():
-            d = pd.read_csv(path)
-            row, _ = plateaux.analyse_arrays(*(d.iloc[:, k].to_numpy(float) for k in range(3)))
+            row, _ = plateaux.analyse_arrays(*experiment.read_capture(path, columns))
             rows.append({"index": cap["index"], "t_s": cap["timestamp"] - t0, **row})
     summary = plateaux.finalize_series(tmp_path, exp, rows)
     df = pd.read_csv(tmp_path / f"{exp}_plateaux.csv", encoding="utf-8-sig").set_index("index")
     return summary, df
+
+
+@pytest.mark.skipif(REFERENCE is None or not REFERENCE.is_dir(), reason="données PEO / référence absentes")
+@pytest.mark.parametrize("exp", ["PEO_N_22", "PEO_N_41", "PEO_N_43"])
+def test_regression_identical_to_frozen_reference(tmp_path, exp):
+    """Résultats figés AVANT le passage aux seuils relatifs au bruit (code du commit
+    840a051, ``samples/reference``, hors dépôt) : flags, plateaux, fréquences, modes de pilotage
+    et synthèse doivent rester identiques, capture par capture."""
+    if not (DATA / exp).is_dir():
+        pytest.skip(f"{exp} absent")
+    summary, df = run_series(tmp_path, exp)
+    ref = pd.read_csv(REFERENCE / f"{exp}_plateaux.csv", encoding="utf-8-sig").set_index("index")
+    pd.testing.assert_frame_equal(df, ref)
+    expected = json.loads((REFERENCE / "syntheses.json").read_text(encoding="utf-8"))[exp]
+    for key, value in expected.items():
+        assert summary[key] == (pytest.approx(value) if isinstance(value, float) else value), key
+
+
+# Série enregistrée avec I en mA (6 captures, bipolaire ~250 Hz) qui sortait 6/6
+# « no_signal » avec les seuils absolus (I < 1 A) : copie locale ``samples/c`` (hors dépôt).
+TEST_CELL = (DATA / "c") if DATA and (DATA / "c" / "test_2026-10-06_06_meta.json").is_file() else None
+
+
+@pytest.mark.skipif(TEST_CELL is None, reason="série test_2026-10-06_06 inaccessible")
+@pytest.mark.parametrize("scale_i", [1.0, 1e3])  # I tel qu'enregistré (mA) ou en A
+def test_milliamp_bipolar_series_is_analysed(tmp_path, scale_i):
+    exp = "test_2026-10-06_06"
+    meta = json.loads((TEST_CELL / f"{exp}_meta.json").read_text(encoding="utf-8"))
+    columns = experiment.capture_columns(meta)
+    assert columns == ("sonde HT_V", "I_mA")
+    rows = []
+    for cap in meta["captures"]:
+        t, U, I = experiment.read_capture(TEST_CELL / f"{exp}_{cap['index']:04d}.csv", columns)
+        row, _ = plateaux.analyse_arrays(t, U, I * scale_i)
+        rows.append({"index": cap["index"], **row})
+    flags = {r["index"]: r["flag"] for r in rows}
+    assert flags == {1: "no_signal", 2: "ok", 3: "ok", 4: "ok", 5: "ok", 6: "ok"}
+    for r in rows[1:]:
+        assert r["ref"] == "U"
+        assert r["freq_Hz"] == pytest.approx(250, rel=0.02)
+        assert r["duty"] == pytest.approx(0.5, abs=0.05)
+        assert r["U_med_pos"] == pytest.approx(300, abs=10)
+        assert r["U_med_neg"] == pytest.approx(-24, abs=8)
+        assert r["n_pulses_pos"] >= 6 and r["n_pulses_neg"] >= 6
+        # I des plateaux : quelques pas de quantification (0,08 mA) autour de zéro, plus bas
+        # pendant U+ que pendant U- (opposition de phase) ; < 1 mA (ou 1 A selon l'hypothèse)
+        assert -1e-3 * scale_i < r["I_med_pos"] < r["I_med_neg"] < 1e-3 * scale_i
 
 
 @pytest.mark.skipif(DATA is None, reason="données PEO absentes")

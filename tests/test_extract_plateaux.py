@@ -14,8 +14,10 @@ import pytest
 
 from tools import extract_plateaux as ep
 
-# Données réelles, hors dépôt : dossier contenant PEO_N_43, en remontant depuis les tests.
-DATA_ROOT = next((p for p in Path(__file__).resolve().parents if (p / "PEO_N_43").is_dir()), Path("/absent"))
+# Données réelles, hors dépôt : ``samples/PEO_N_43``, en remontant depuis les tests
+# (lecture seule : le re-traitement écrit dans le meta, on travaille sur une copie).
+DATA_ROOT = next((p / "samples" for p in Path(__file__).resolve().parents
+                  if (p / "samples" / "PEO_N_43").is_dir()), Path("/absent"))
 
 
 def write_series(root, exp="PEO_N_99", n=3):

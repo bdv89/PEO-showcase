@@ -70,6 +70,9 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 - **« l'exécution de scripts est désactivée »** : lancer le script avec
   `powershell -ExecutionPolicy Bypass -File .\install.ps1`, comme ci-dessus. Ce réglage ne
   vaut que pour cette commande.
+- **`git pull` refusé** par `install.ps1` (« Not possible to fast-forward ») : l'historique publié a
+  été corrigé. Une seule fois, dans le dossier du projet : `git fetch; git reset --hard origin/main`,
+  puis relancer `install.ps1`. Attention : efface les modifications locales non commitées du code.
 - **« Python 3.12 introuvable »** : `winget install Python.Python.3.12`, puis relancer.
 - **Ne pas lancer `py launcher.py` directement** : `py` choisit la version de Python la plus
   récente installée, qui peut être une version alpha. Passer par `install.ps1`, puis par

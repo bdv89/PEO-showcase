@@ -235,7 +235,8 @@ def test_algo_version_is_hash_of_plateaux_source():
 
 def test_algo_parameters_are_numeric_constants_only():
     params = xp.algo_parameters()
-    assert params["MIN_AMPLITUDE_A"] == 1.0
+    assert params["MIN_SNR"] == 5.0  # seuils relatifs au bruit de mesure (plus de seuil en A ou V)
+    assert not {"MIN_AMPLITUDE_A", "MIN_AMPLITUDE_V", "U_ABSENT_V"} & params.keys()
     assert "COLUMNS" not in params and "_PREFIXES" not in params
     assert all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in params.values())
     json.dumps(params)  # sérialisable (pas de float numpy)

@@ -6,7 +6,9 @@ qui lit les CSV) l'importent tous les deux.
 
 Par capture : découpe des impulsions par seuillage à hystérésis (sur I ou sur U,
 le plus régulier), statistiques sur le cœur de chaque plateau, fréquence et
-rapport cyclique. Sur toute la série : estimation du mode de pilotage (courant
+rapport cyclique. Aucun seuil en A ou en V : la présence d'un signal et d'un
+plateau se juge par rapport au **bruit de mesure** de la voie (:func:`noise_level`),
+si bien que le résultat ne dépend ni de l'unité (mA ou A) ni du facteur de sonde. Sur toute la série : estimation du mode de pilotage (courant
 ou tension contrôlé) et synthèse.
 
 - :func:`analyse_arrays` prend des tableaux (``t, U, I``) en V et A ;
@@ -26,9 +28,13 @@ from pathlib import Path
 import numpy as np
 
 # --- Paramètres ---------------------------------------------------------------------
-MIN_AMPLITUDE_A = 1.0      # en dessous : capture sans signal
-MIN_AMPLITUDE_V = 40.0     # niveau mini pour découper sur la tension
-U_ABSENT_V = 20.0          # plateau U sous ce niveau alors que I circule : voie U muette
+# Seuils relatifs au bruit de mesure d'une voie (:func:`noise_level`), sans unité. Les
+# anciens seuils absolus (1 A, 40 V, 20 V) valaient 5 et 2,5 pas de quantification
+# aux calibres des essais PEO_N_* (0,2 A et 8 V par pas) : même comportement sur ces
+# essais, mais valable en mA, en kV, avec une sonde x10 ou x100…
+MIN_SNR = 5.0              # signal (crête-à-crête de I) et plateaux : >= 5 x le bruit
+U_ABSENT_SNR = 2.5         # plateau U < 2,5 x son bruit alors que I circule : voie U muette
+QUANT_MIN_FRACTION = 0.1   # pas de quantification reconnu s'il revient sur >= 10 % des points
 HYST_HI, HYST_LO = 0.6, 0.4  # seuils d'hystérésis (fraction du niveau haut)
 MIN_RUN_S = 0.25e-3        # durée mini d'un plateau (élimine les pointes de coupure)
 NEG_MIN_FRACTION = 0.3     # plateau négatif plus court (x plateau positif) : queue de coupure
@@ -63,13 +69,40 @@ def to_si(values, unit: str):
     return np.asarray(values, float) * _PREFIXES[prefix], base
 
 
-# --- découpage d'une capture -----------------------------------------------------------
-def state_level(x, q=0.9):
-    """Niveau d'état haut (approche IEEE 181 simplifiée) : médiane des points
-    au-dessus du quantile q. Les pointes brèves (< 10 % des points) ne
-    suffisent pas à créer un niveau."""
-    return max(float(np.median(x[x >= np.quantile(x, q)])), 0.0)
+# --- bruit de mesure et niveaux ----------------------------------------------------------
+def noise_level(x):
+    """Bruit de mesure de ``x``, dans son unité : le plus grand du pas de quantification
+    (résolution du scope 8 bits, facteur de sonde compris) et de l'écart-type du bruit
+    blanc, estimé robustement sur les différences successives (les fronts, rares, ne
+    comptent pas). Le pas de quantification est le plus petit écart non nul entre points
+    successifs, s'il revient souvent (``QUANT_MIN_FRACTION``) : un bruit d'1 LSB en a un,
+    un créneau idéal à deux valeurs (signal synthétique) non. 0 pour un signal idéal."""
+    d = np.abs(np.diff(np.asarray(x, float)))
+    steps = d[d > 0]
+    lsb = float(steps.min()) if steps.size and steps.size >= QUANT_MIN_FRACTION * d.size else 0.0
+    sigma = 1.4826 * float(np.median(d)) / np.sqrt(2)  # MAD des différences -> écart-type
+    return max(lsb, sigma)
 
+
+def upper_level(x, q=0.9):
+    """Médiane des points au-dessus du quantile q (niveau d'état haut, IEEE 181
+    simplifiée) : les pointes brèves (< 10 % des points) ne créent pas de niveau."""
+    return float(np.median(x[x >= np.quantile(x, q)]))
+
+
+def state_level(x, q=0.9):
+    """Niveau d'état haut rapporté au zéro du scope (0 si l'état haut est négatif)."""
+    return max(upper_level(x, q), 0.0)
+
+
+def has_signal(x):
+    """Vrai si l'écart entre les niveaux d'état haut et bas de ``x`` (insensible à un
+    offset) dépasse ``MIN_SNR`` fois le bruit de mesure. Bruit seul : ~3,5 sigma ;
+    bruit de quantification : 1 à 3 pas."""
+    return upper_level(x) + upper_level(-x) > MIN_SNR * noise_level(x)
+
+
+# --- découpage d'une capture -----------------------------------------------------------
 
 def hysteresis_runs(x, level, dt):
     """Runs où x est au-dessus du seuil (trigger de Schmitt).
@@ -95,12 +128,14 @@ def hysteresis_runs(x, level, dt):
     return runs
 
 
-def segment(x, dt, min_level):
-    """Plateaux positifs et négatifs de x. Un plateau négatif n'est retenu que
-    s'il dure au moins ``NEG_MIN_FRACTION`` d'un plateau positif."""
+def segment(x, dt):
+    """Plateaux positifs et négatifs de x. Une polarité n'est découpée que si son
+    niveau dépasse ``MIN_SNR`` fois le bruit de mesure ; un plateau négatif n'est
+    retenu que s'il dure au moins ``NEG_MIN_FRACTION`` d'un plateau positif."""
     lp, ln = state_level(x), state_level(-x)
-    pos = hysteresis_runs(x, lp, dt) if lp >= min_level else []
-    neg = hysteresis_runs(-x, ln, dt) if ln >= min_level else []
+    min_level = MIN_SNR * noise_level(x)
+    pos = hysteresis_runs(x, lp, dt) if lp > min_level else []
+    neg = hysteresis_runs(-x, ln, dt) if ln > min_level else []
     if pos:
         dmin = NEG_MIN_FRACTION * np.median([b - a for a, b in pos])
         neg = [(a, b) for a, b in neg if b - a >= dmin]
@@ -121,8 +156,7 @@ def best_segmentation(U, I, dt):
     """Découpe sur I et sur U, garde la plus régulière. I est souvent plus
     propre (U quantifié à 8 V), mais en début de PEO les micro-décharges rendent
     I irrégulier alors que U reste un créneau net."""
-    cands = {"I": segment(I, dt, MIN_AMPLITUDE_A),
-             "U": segment(U, dt, MIN_AMPLITUDE_V)}
+    cands = {"I": segment(I, dt), "U": segment(U, dt)}
     name = min(cands, key=lambda k: regularity(cands[k][0]) + U_REF_PENALTY * (k == "U"))
     return (*cands[name], name)
 
@@ -170,7 +204,7 @@ def analyse_arrays(t, U, I):
     t, U, I = (np.asarray(a, float) for a in (t, U, I))
     dt = float(np.median(np.diff(t)))
     row = {"n_pulses_pos": 0, "n_pulses_neg": 0}
-    if max(state_level(I), state_level(-I)) < MIN_AMPLITUDE_A:
+    if not has_signal(I):
         row["flag"] = "no_signal"
         return row, None
     runs_pos, runs_neg, ref_name = best_segmentation(U, I, dt)
@@ -187,7 +221,7 @@ def analyse_arrays(t, U, I):
     row["freq_fft_Hz"] = fft_freq(I, dt)
     row["ref"] = ref_name
     row["flag"] = "ok" if ref else "no_plateau"
-    if ref and abs(row.get("U_med_pos", 0)) < U_ABSENT_V:
+    if ref and abs(row.get("U_med_pos", 0)) < U_ABSENT_SNR * noise_level(U):
         row["flag"] = "U_absent"  # voie tension muette alors que I circule
     elif runs_neg and row.get("U_med_pos", 0) < row.get("U_med_neg", 0):
         row["flag"] = "U_dephase"  # U non synchrone de I
@@ -254,7 +288,8 @@ def control_label(row, exp: str) -> str:
         label += f"  —  ANOMALIE {row['flag']}"
     if row.get("U_med_pos") is None or np.isnan(row.get("U_med_pos")):  # pas de plateau mesuré
         return label
-    return f"{label}  —  U = {row['U_med_pos']:.0f} V, I = {row['I_med_pos']:.1f} A, f = {row['freq_Hz']:.0f} Hz"
+    return (f"{label}  —  U = {row['U_med_pos']:.0f} V, I = {fmt_current(row['I_med_pos'])} A, "
+            f"f = {row['freq_Hz']:.0f} Hz")
 
 
 def save_control_png(captures, path, *, title: str = "", row_height=1.8) -> None:
@@ -411,8 +446,8 @@ def finalize_series(series_dir, exp: str, rows: list[dict]):
         "bipolaire": bool(ok["n_pulses_neg"].sum() > 0),
         "freq_Hz": ok["freq_Hz"].median(),
         "duty": ok["duty"].median(),
-        "U_pos_debut_fin": start_end(ok["U_med_pos"], "{:.0f}"),
-        "I_pos_debut_fin": start_end(ok["I_med_pos"], "{:.1f}"),
+        "U_pos_debut_fin": start_end(ok["U_med_pos"], "{:.0f}".format),
+        "I_pos_debut_fin": start_end(ok["I_med_pos"], fmt_current),
         "ruptures_U": ruptures,
         **mode_summary,
     }
@@ -457,11 +492,18 @@ def flag_jumps(df):
 
 def start_end(values, fmt):
     """« début -> fin » : médianes des ``SUMMARY_EDGE`` premières et dernières
-    valeurs (une capture aberrante en bout de série ne fausse pas la synthèse)."""
+    valeurs (une capture aberrante en bout de série ne fausse pas la synthèse) ;
+    ``fmt`` : valeur -> texte."""
     if values.empty:
         return ""
     v = values.to_numpy()
-    return f"{fmt.format(np.median(v[:SUMMARY_EDGE]))} -> {fmt.format(np.median(v[-SUMMARY_EDGE:]))}"
+    return f"{fmt(np.median(v[:SUMMARY_EDGE]))} -> {fmt(np.median(v[-SUMMARY_EDGE:]))}"
+
+
+def fmt_current(value) -> str:
+    """Courant en A lisible à toute échelle : 1 décimale dès 1 A (8.8), sinon 2 chiffres
+    significatifs (0.00048 pour 0,48 mA, au lieu de « 0.0 »)."""
+    return f"{value:.1f}" if abs(value) >= 1 else f"{value:.2g}"
 
 
 # --- accumulation en direct (GUI) -------------------------------------------------------
