@@ -126,6 +126,17 @@ def arm_threshold(scope, threshold: dict) -> None:
     control.run(scope)
 
 
+def resume_acquisition(scope, start_mode: str) -> None:
+    """Début de l'enregistrement : le scope doit acquérir en continu, sinon chaque
+    capture relit la même trace figée. Après un départ au seuil, le trigger SINGLE
+    (arrêté par la détection) repasse en AUTO -- pas NORM : générateur arrêté =>
+    captures « sans signal » plutôt qu'une ancienne trace répétée. Dans tous les
+    modes, ARM relance un scope éventuellement resté sur Stop (série précédente)."""
+    if start_mode == "threshold":
+        control.set_trigger_mode(scope, "AUTO")
+    control.run(scope)
+
+
 def start_series(
     scope,
     mode: str,
@@ -369,6 +380,7 @@ def run_series(
     )
     if not started:
         return RunResult(started=False)
+    resume_acquisition(scope, config.start_mode)
 
     interval = capture_interval(config.rate, config.per_seconds)
     t0 = clock()
@@ -486,7 +498,7 @@ class SeriesRunner:
             if self.phase == "start":
                 return self._step_start(scope, now)
             if self.phase == "countdown":
-                return self._step_countdown(now)
+                return self._step_countdown(scope, now)
             if self.phase == "threshold":
                 return self._step_threshold(scope, now)
             if self.phase == "running":
@@ -515,7 +527,7 @@ class SeriesRunner:
     def _step_start(self, scope, now: float) -> list[SeriesEvent]:
         mode = self.config.start_mode
         if mode == "now":
-            return self._begin_running(now)
+            return self._begin_running(scope, now)
         if mode == "countdown":
             self._deadline_wall = now + self.config.delay_s
             self.phase = "countdown"
@@ -526,11 +538,11 @@ class SeriesRunner:
         self.phase = "threshold"
         return [SeriesEvent("armed")]
 
-    def _step_countdown(self, now: float) -> list[SeriesEvent]:
+    def _step_countdown(self, scope, now: float) -> list[SeriesEvent]:
         if self._stop:
             return self._finalize(now)
         if now >= self._deadline_wall:
-            return self._begin_running(now)
+            return self._begin_running(scope, now)
         return [SeriesEvent("countdown", remaining_s=self._deadline_wall - now)]
 
     def _step_threshold(self, scope, now: float) -> list[SeriesEvent]:
@@ -539,7 +551,7 @@ class SeriesRunner:
             self.result = RunResult(started=False)
             return [SeriesEvent("failed")]
         if self._poll(scope):
-            return self._begin_running(now)
+            return self._begin_running(scope, now)
         if now >= self._deadline_wall:
             self.phase = "failed"
             self.result = RunResult(started=False)
@@ -581,15 +593,17 @@ class SeriesRunner:
         return []
 
     # --- transitions --------------------------------------------------------------
-    def _begin_running(self, now: float) -> list[SeriesEvent]:
+    def _begin_running(self, scope, now: float) -> list[SeriesEvent]:
         """Détection : crée le dossier et le meta (fiche, dates) -- ou échoue sans rien
-        écraser si le dossier de série existe déjà."""
+        écraser si le dossier de série existe déjà -- puis remet le scope en
+        acquisition continue (:func:`resume_acquisition`)."""
         try:
             _check_new_series_dir(self.config)
         except FileExistsError as exc:
             self.phase = "failed"
             self.result = RunResult(started=False)
             return [SeriesEvent("failed", message=str(exc))]
+        resume_acquisition(scope, self.config.start_mode)
         interval = capture_interval(self.config.rate, self.config.per_seconds)
         self._deadlines = tick_deadlines(now, interval, self.config.duration_max)
         self._ptr = 0

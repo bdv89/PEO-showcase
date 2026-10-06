@@ -239,6 +239,13 @@ de la série + horodatage réel de chaque capture) clôt la série.
   matériel. Si le seuil n'est jamais atteint dans `--threshold-timeout`, la série est
   annulée : **aucun fichier écrit, aucun meta**.
 
+Au **début de l'enregistrement**, le scope est remis en acquisition continue : après un
+départ `threshold`, le trigger SINGLE (arrêté par la détection) repasse en **`TRMD AUTO`**
+puis `ARM` ; dans les autres modes, `ARM` seul (relance un scope resté sur Stop). Sans
+cela, chaque capture relisait la même trace figée. AUTO plutôt que NORM : si le
+générateur s'arrête, les captures suivantes sont « sans signal » au lieu de répéter la
+dernière trace.
+
 **Condition d'arrêt** : la première limite atteinte entre le nombre de tops calculés
 (`--rate`/`--per`) et `--duration`. Chaque voie en échec (ex. acquisition vide) est
 isolée — n'interrompt pas les autres voies ni la série.
@@ -538,8 +545,9 @@ Pendant qu'une série tourne :
   Enregistrement sont grisés** : ils entreraient en conflit (le départ au seuil
   reconfigure le trigger natif ; changer VDIV/TDIV pendant un fetch de série risquerait de
   désynchroniser le flux) — réactivés automatiquement à la fin ;
-- le départ au seuil utilise le réglage Déclenchement affiché : le trigger du scope reste
-  donc cohérent avec l'interface après la série.
+- le départ au seuil utilise le réglage Déclenchement affiché (voie, front, niveau) ; le
+  mode de déclenchement du scope, lui, passe en SINGLE pour la détection puis en **AUTO**
+  pour l'enregistrement, et y reste après la série (le scope continue d'acquérir).
 
 Fermer la fenêtre pendant une série en cours l'arrête proprement avant de
 quitter (le sidecar meta est tout de même écrit) ; le délai d'attente de

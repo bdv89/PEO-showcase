@@ -607,6 +607,47 @@ def test_series_runner_request_stop_finalizes_with_partial_captures(tmp_path):
     assert runner.result.meta_path is not None
 
 
+# --- acquisition continue pendant l'enregistrement ------------------------------------------
+# Constaté sur le scope : le départ au seuil arme un trigger SINGLE, qui s'arrête au premier
+# déclenchement -> scope sur Stop pendant toute la série et chaque capture relisait la même
+# trace figée. Au début de l'enregistrement : retour en AUTO (pas NORM : générateur arrêté =>
+# captures « sans signal », pas une vieille trace répétée) puis ARM.
+@pytest.fixture
+def _runner_config_kw(tmp_path):
+    return lambda **kw: _runner_config(tmp_path, duration_max=0.5, **kw)
+
+
+def test_threshold_start_switches_scope_back_to_continuous_acquisition(_runner_config_kw):
+    scope, clock = FakeScope(), FakeClock(step=0.5)
+    config = _runner_config_kw(start_mode="threshold",
+                               threshold={"channel": "C2", "level": "1V", "slope": "POS", "timeout_s": 10})
+    runner = series.SeriesRunner(config, clock=clock, poll=lambda s: True,
+                                 fetch=_make_fetch(), save=_make_save([]))
+    _drive(runner, scope, clock)
+    single = scope.writes.index("TRMD SINGLE")
+    assert scope.writes[single + 1:single + 4] == ["ARM", "TRMD AUTO", "ARM"]  # armé, puis continu
+
+
+@pytest.mark.parametrize("mode, extra", [("now", {}), ("countdown", {"delay_s": 1.0})])
+def test_other_starts_relaunch_acquisition_without_touching_trigger_mode(_runner_config_kw, mode, extra):
+    scope, clock = FakeScope(), FakeClock(step=0.5)
+    runner = series.SeriesRunner(_runner_config_kw(start_mode=mode, **extra), clock=clock,
+                                 fetch=_make_fetch(), save=_make_save([]))
+    _drive(runner, scope, clock)
+    assert scope.writes == ["ARM"]  # scope peut-être resté sur Stop : relancé ; trigger intact
+
+
+def test_run_series_cli_threshold_also_resumes_continuous_acquisition(tmp_path):
+    scope = FakeScope()
+    config = _runner_config(tmp_path, duration_max=0.5, start_mode="threshold",
+                            threshold={"channel": "C2", "level": "1V", "slope": "POS", "timeout_s": 10})
+    result = series.run_series(config, scope, clock=FakeClock(), sleep=lambda _s: None,
+                               fetch=_make_fetch(), save=_make_save([]),
+                               wait=lambda scope_arg, *, timeout_s: True)
+    assert result.started is True
+    assert scope.writes[-2:] == ["TRMD AUTO", "ARM"]
+
+
 def test_series_runner_scope_error_while_waiting_threshold_ends_cleanly(tmp_path):
     # scope débranché pendant l'attente du seuil : la série se termine (au lieu de
     # remonter l'exception et de tuer le thread d'acquisition de la GUI)
