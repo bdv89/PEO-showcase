@@ -16,6 +16,7 @@ Contrairement à ``live.py`` (affichage seul), cette fenêtre pilote aussi le sc
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import queue
 import threading
@@ -99,6 +100,8 @@ DEBOUNCE_MS = 200
 # series.py sans dépendance PyQt) ; ré-exportée ici pour ne pas casser les
 # imports existants (`from scope.gui import decimate`, tests/test_gui.py, live.py).
 from .waveform import decimate  # noqa: F401
+
+log = logging.getLogger("oscilloscope")
 
 
 # Commandes qui peuvent changer les échelles/la portée d'une voie -> invalident
@@ -315,15 +318,24 @@ class AcquisitionWorker:
             def run(self) -> None:
                 from .connection import Scope
 
+                # Connecté = le scope RÉPOND (*IDN?), pas seulement la liaison ouverte :
+                # sur le terrain, la liaison s'ouvrait puis *IDN? expirait, et cette
+                # exception non interceptée tuait le thread (UI figée en « armée »).
                 try:
                     self.scope = Scope(
                         self.ip, socket=self.socket, usb=self.usb, timeout_ms=self.timeout_ms
                     )
+                    idn = self.scope.idn()
                 except Exception as exc:  # noqa: BLE001 — remonté à l'UI, pas fatal
-                    self.connection_failed.emit(str(exc))
+                    if self.scope is not None:
+                        try:
+                            self.scope.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    self.connection_failed.emit(str(exc) or type(exc).__name__)
                     return
 
-                self.connected.emit(self.scope.idn())
+                self.connected.emit(idn)
                 self._running = True
                 while self._running:
                     self._drain_commands()
@@ -494,6 +506,7 @@ def _build_main_window(
 
             # État d'une série : armée (attend le signal) -> enregistrement -> terminée.
             self._armed = False
+            self._connected = False  # le scope a répondu à *IDN?
             self._recording = False
             self._config: series.SeriesConfig | None = None
             self._series_dir: Path | None = None      # série en cours d'enregistrement
@@ -527,10 +540,12 @@ def _build_main_window(
             self.worker.plateau_ready.connect(self.on_plateau_ready)
             self.worker.plateau_error.connect(self.on_plateau_error)
             self.worker.plateau_summary.connect(self.on_plateau_summary)
+            self.worker.finished.connect(self._on_worker_finished)
             # Après la connexion des signaux du worker mais avant son démarrage :
             # les voies actives restaurées sont postées dans la file de commandes
             # comme un clic utilisateur.
             self._apply_settings(load_gui_settings(self.settings_path))
+            self._refresh_arm_state()
             self.worker.start()
 
         # -- construction UI ---------------------------------------------------
@@ -794,6 +809,7 @@ def _build_main_window(
                 "Si aucune voie n'est cochée, capture C1."
             )
             btn_capture.clicked.connect(self._on_capture_clicked)
+            self.btn_capture = btn_capture
             cap_row.addWidget(self.png_check)
             cap_row.addStretch(1)
             cap_row.addWidget(btn_capture)
@@ -971,7 +987,7 @@ def _build_main_window(
             self.btn_series_stop.setProperty("kind", "danger")
             self.btn_series_stop.setEnabled(False)
             self.btn_series_start.clicked.connect(self._on_series_start)
-            self.btn_series_stop.clicked.connect(lambda: self.cmd_queue.put(("series_stop",)))
+            self.btn_series_stop.clicked.connect(self._on_series_stop)
             btn_row.addWidget(self.btn_series_start, 2)
             btn_row.addWidget(self.btn_series_stop, 1)
             v.addLayout(btn_row)
@@ -1280,6 +1296,15 @@ def _build_main_window(
                 return
             outdir = self.outdir_edit.text().strip() or "captures"
             exp_id = experiment.next_id(outdir, prefix, date.today())
+            u, i = self.u_combo.currentData(), self.i_combo.currentData()
+            missing = [ch for ch in (u, i) if ch not in self.active_channels]
+            if u != i and missing:
+                choice = self._ask_analysis_channels(missing)
+                if choice == "cancel":
+                    return
+                if choice == "check":
+                    for ch in missing:
+                        self.channel_checks[ch].setChecked(True)
             mode = self._start_mode()
             threshold = None
             if mode == "threshold":
@@ -1318,7 +1343,6 @@ def _build_main_window(
                 return
 
             # Extraction des plateaux seulement si U et I font partie des voies capturées.
-            u, i = self.u_combo.currentData(), self.i_combo.currentData()
             analysed = u in config.channels and i in config.channels and u != i
             if analysed:
                 config.u_channel, config.i_channel = u, i
@@ -1341,6 +1365,22 @@ def _build_main_window(
                 f"Série « {config.experiment_id} » armée…"
                 + ("" if analysed else f" (sans analyse des plateaux : cocher {u} et {i}, distinctes)")
             )
+
+        def _ask_analysis_channels(self, missing: list) -> str:
+            """Voies d'analyse U/I non cochées au moment d'armer : « check » (les cocher
+            et armer), « without » (armer sans analyse) ou « cancel »."""
+            names = " et ".join(self._channel_text(ch) for ch in missing)
+            box = QtWidgets.QMessageBox(self)
+            box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+            box.setWindowTitle("Analyse des plateaux")
+            box.setText(f"Voie(s) d'analyse non cochée(s) : {names}.\n\n"
+                        "Sans elles, la série est enregistrée mais l'onglet Analyse reste vide.")
+            check = box.addButton("Cocher et armer", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+            without = box.addButton("Armer sans analyse", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Annuler", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(check)
+            box.exec()
+            return {check: "check", without: "without"}.get(box.clickedButton(), "cancel")
 
         # -- réglages mémorisés ----------------------------------------------------
         def _collect_settings(self) -> dict:
@@ -1677,10 +1717,50 @@ def _build_main_window(
 
         # -- réception des signaux worker (thread UI) ----------------------------
         def on_connected(self, idn: str) -> None:
+            self._connected = True
+            log.info("Scope connecté : %s", idn)
             self.status.showMessage(f"Connecté : {idn}")
+            self._refresh_arm_state()
 
         def on_connection_failed(self, msg: str) -> None:
-            self.status.showMessage(f"Échec de connexion : {msg}")
+            self._connected = False
+            log.error("Échec de connexion au scope : %s", msg)
+            self.status.showMessage(f"Échec de connexion : {msg} — relancer l'application une fois le scope joignable")
+            self._refresh_arm_state()
+
+        def _on_worker_finished(self) -> None:
+            """Thread d'acquisition terminé (échec de connexion, liaison perdue) : plus
+            aucune commande ne sera traitée -- une série armée est remise à zéro ici."""
+            self._connected = False
+            if self._armed or self._recording:
+                log.error("Liaison avec le scope perdue pendant une série")
+                self.on_series_done(series.RunResult(started=False))
+                self.status.showMessage("Série interrompue : liaison avec le scope perdue")
+            self._refresh_arm_state()
+
+        def _refresh_arm_state(self) -> None:
+            """Armer / Capturer : seulement scope connecté et aucune série en cours."""
+            busy = self._armed or self._recording
+            for btn in (self.btn_series_start, self.btn_capture):
+                btn.setEnabled(self._connected and not busy)
+            if not self._connected:
+                self.btn_series_start.setToolTip(
+                    "Scope non connecté : armement impossible (voir la barre d'état et\n"
+                    "logs/oscilloscope.log ; relancer l'application une fois le scope joignable).")
+            else:
+                self.btn_series_start.setToolTip(
+                    "Attribue l'ID et prépare la série (cadre Enregistrement ci-dessus).\n"
+                    "En départ « Au seuil », l'enregistrement démarre à la détection\n"
+                    "du signal de l'alimentation. La fiche reste modifiable pendant l'essai.")
+
+        def _on_series_stop(self) -> None:
+            if self.worker.isRunning():
+                self.cmd_queue.put(("series_stop",))
+                log.info("Arrêt de la série demandé")
+                self.status.showMessage("Arrêt demandé — fin de la capture en cours…")
+            else:  # plus de thread pour traiter la demande : remise à zéro locale
+                self.on_series_done(series.RunResult(started=False))
+                self.status.showMessage("Série arrêtée (scope non connecté)")
 
         def on_waveform_ready(self, ch: str, wf) -> None:
             curve = self.curves.get(ch)
@@ -1708,6 +1788,10 @@ def _build_main_window(
             self.status.showMessage(f"Erreur : {msg}")
 
         def on_series_progress(self, ev) -> None:
+            if ev.kind not in ("countdown", "waiting_threshold"):
+                (log.error if ev.kind == "failed" else log.info)(
+                    "Série : %s%s%s", ev.kind, f" {ev.index}/{ev.total}" if ev.kind == "capture" else "",
+                    f" — {ev.message}" if ev.message else "")
             if ev.kind == "started" and self._config is not None:
                 self._recording = True
                 self._series_dir = Path(self._config.outdir) / self._config.experiment_id
@@ -1718,7 +1802,8 @@ def _build_main_window(
                     self.tabs.setCurrentIndex(1)  # fiche incomplète : on reste sur Mesure
                 self._update_alert()
             elif ev.kind == "failed" and ev.message:
-                QtWidgets.QMessageBox.warning(self, "Série refusée", ev.message)
+                title = "Série interrompue" if ev.message.startswith("erreur") else "Série refusée"
+                QtWidgets.QMessageBox.warning(self, title, ev.message)
             if ev.kind == "capture":
                 self.status.showMessage(
                     f"Série : capture {ev.index}/{ev.total} "
@@ -1753,6 +1838,7 @@ def _build_main_window(
                 self.fiche_form.set_tag_suggestions(experiment.collect_tags(finished_dir.parent))
             self._refresh_next_id()
             self._update_alert()
+            self._refresh_arm_state()
 
         # -- fermeture -------------------------------------------------------------
         def closeEvent(self, event) -> None:  # noqa: N802 — override Qt

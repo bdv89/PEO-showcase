@@ -145,3 +145,10 @@ def test_old_settings_file_gets_new_start_and_analysis_defaults_once(tmp_path):
     assert not {"series_mode", "u_channel", "i_channel", "thr_src", "thr_timeout"} & loaded.keys()
     save_gui_settings(dict(loaded, start_mode="now"), path)
     assert load_gui_settings(path)["start_mode"] == "now"  # ensuite : dernier choix repris
+
+
+def test_fresh_install_records_the_analysis_channels():
+    # sans réglage mémorisé, les voies enregistrées doivent contenir U et I, sinon
+    # l'analyse des plateaux est désactivée (constaté sur une installation neuve)
+    d = GUI_SETTINGS_DEFAULTS
+    assert {d["analysis_u"], d["analysis_i"]} <= set(d["active_channels"])

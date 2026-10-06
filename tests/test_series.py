@@ -607,6 +607,46 @@ def test_series_runner_request_stop_finalizes_with_partial_captures(tmp_path):
     assert runner.result.meta_path is not None
 
 
+def test_series_runner_scope_error_while_waiting_threshold_ends_cleanly(tmp_path):
+    # scope débranché pendant l'attente du seuil : la série se termine (au lieu de
+    # remonter l'exception et de tuer le thread d'acquisition de la GUI)
+    config = _runner_config(
+        tmp_path, start_mode="threshold",
+        threshold={"channel": "C1", "level": "1V", "slope": "POS", "timeout_s": 60.0},
+    )
+
+    def poll(scope):
+        raise OSError("VI_ERROR_TMO : délai dépassé")
+
+    clock = FakeClock(step=0.5)
+    runner = series.SeriesRunner(config, clock=clock, arm=lambda s, t: None, poll=poll,
+                                 fetch=_make_fetch(), save=_make_save([]))
+    events = _drive(runner, FakeScope(), clock)
+    assert runner.finished and events[-1].kind == "failed"
+    assert "délai dépassé" in events[-1].message
+    assert runner.result.started is False
+    assert not (tmp_path / config.experiment_id).exists()
+
+
+def test_series_runner_scope_error_while_running_keeps_captures(tmp_path, monkeypatch):
+    config = _runner_config(tmp_path, duration_max=10.0)
+    clock = FakeClock(step=0.5)
+    runner = series.SeriesRunner(config, clock=clock, fetch=_make_fetch(), save=_make_save([]))
+    events = []
+    while len([e for e in events if e.kind == "capture"]) < 2:
+        events.extend(runner.step(FakeScope(), clock()))
+
+    def lost(*a, **k):
+        raise ConnectionResetError("connexion perdue")
+
+    monkeypatch.setattr(series, "capture_once", lost)
+    events.extend(_drive(runner, FakeScope(), clock))
+    assert runner.finished and events[-1].kind == "failed"
+    assert "connexion perdue" in events[-1].message
+    assert runner.result.started is True and len(runner.result.captures) == 2
+    assert runner.result.meta_path is not None  # captures déjà faites conservées
+
+
 # --- traçabilité (meta v2) -----------------------------------------------------------
 from datetime import datetime, timedelta, timezone  # noqa: E402
 

@@ -46,3 +46,23 @@
 ## Reste
 - Essai sur matériel (scope réel) de la nouvelle colonne.
 - `.venv` de l'utilisateur à réparer en lançant `install.ps1`.
+
+## Correctifs terrain (2026-10-06 après-midi, installation sur une autre machine)
+Symptômes : « Armer puis Arrêter n'arrête pas », « l'onglet Analyse reste muet ».
+Journal de la machine : liaison ouverte (13:28:15) puis `*IDN?` expiré (13:28:29) ->
+exception non interceptée -> thread d'acquisition mort, UI figée en « armée », aucune capture.
+- [x] Connecté = `*IDN?` a répondu (ouverture + IDN dans le même try) ; Armer/Capturer
+      grisés tant que non connecté ; fin du thread -> série remise à zéro ; Arrêter remet
+      toujours l'UI à zéro.
+- [x] `SeriesRunner.step` : toute erreur termine la série proprement (`_abort`, captures et
+      meta conservés) au lieu de remonter.
+- [x] Installation neuve : C2/C3 cochées par défaut (sinon série sur C1 seule, analyse
+      désactivée en silence — reproduit) ; dialogue « Cocher et armer / Armer sans analyse /
+      Annuler » si les voies d'analyse ne sont pas cochées.
+- [x] Journal : connexion (succès/échec) et étapes de la série dans `logs/oscilloscope.log`.
+- [x] `tests/test_gui_window.py` : fenêtre réelle hors écran, scope simulé (connexion
+      échouée / IDN muet / arrêt pendant l'attente / thread disparu / erreur scope / analyse
+      en direct / installation neuve / dialogue). Suite : 339 OK (.venv), 327 OK + 2 skip (Python
+      système sans PyQt5).
+- Cause matérielle restante : interface réseau du scope bloquée (piège documenté :
+  rafale de réglages) -> redémarrer le scope ; diagnostic dans INSTALL.md.

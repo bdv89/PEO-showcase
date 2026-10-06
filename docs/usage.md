@@ -484,6 +484,17 @@ Cadre **Enregistrement** (colonne Expérience) — mêmes paramètres que la CLI
 Seuls les champs du départ choisi sont affichés ; le choix est mémorisé. **Analyse U / I** :
 voies de l'extraction des plateaux (défaut U = C2, I = C3 : montage PEO).
 
+**Connexion** : le scope n'est considéré comme connecté que s'il **répond** à `*IDN?`.
+Tant que ce n'est pas le cas, **Armer la série** et **Capturer maintenant** restent grisés
+(barre d'état : « Échec de connexion… » ; détail horodaté dans `logs/oscilloscope.log`).
+Si le thread d'acquisition s'arrête (liaison perdue), une série armée est remise à zéro et
+**Arrêter** fonctionne toujours. Une erreur du scope pendant une série la termine
+proprement : les captures déjà faites et le `meta.json` sont conservés.
+
+**Voies d'analyse non cochées** au moment d'armer : une boîte de dialogue propose
+**Cocher et armer**, **Armer sans analyse** ou **Annuler** (sans U et I enregistrées,
+l'onglet Analyse resterait vide). Installation neuve : C2 et C3 cochées par défaut.
+
 La barre d'état affiche l'état de connexion, le nombre de points **bruts** reçus et le
 débit (`Sa/s`) de la dernière trame, et les erreurs (ex. voie sans acquisition — cf.
 « acquisition vide » ci-dessous).

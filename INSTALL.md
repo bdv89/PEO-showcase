@@ -57,6 +57,16 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
   dossier autonome. Il est horodaté et contient toutes les erreurs, y compris celles qui
   surviennent après l'ouverture de la fenêtre.
 - **Console visible** : `Oscilloscope\Oscilloscope-debug.bat`.
+- **« Échec de connexion » / le scope ne répond pas** (journal : `*IDN?` … délai dépassé) :
+  la liaison réseau s'ouvre mais le scope ne répond plus. C'est le blocage connu de son
+  interface réseau après une rafale de réglages. **Redémarrer l'oscilloscope**, fermer tout
+  autre logiciel connecté au scope (EasyScopeX, une autre fenêtre PEOscillo), puis tester :
+  ```powershell
+  cd "$HOME\PEOscillo"
+  .\.venv\Scripts\python.exe -m scope.cli idn 10.11.13.220            # VXI-11
+  .\.venv\Scripts\python.exe -m scope.cli --socket idn 10.11.13.220   # socket (celui de la GUI)
+  ```
+  Les deux doivent afficher `Siglent Technologies,SDS1204X-E,…`.
 - **« l'exécution de scripts est désactivée »** : lancer le script avec
   `powershell -ExecutionPolicy Bypass -File .\install.ps1`, comme ci-dessus. Ce réglage ne
   vaut que pour cette commande.

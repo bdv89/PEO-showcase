@@ -478,16 +478,38 @@ class SeriesRunner:
         return self.phase in ("done", "failed")
 
     def step(self, scope, now: float) -> list[SeriesEvent]:
-        """Fait avancer la machine d'un pas ; jamais bloquant. Retourne 0..n événements."""
-        if self.phase == "start":
-            return self._step_start(scope, now)
-        if self.phase == "countdown":
-            return self._step_countdown(now)
-        if self.phase == "threshold":
-            return self._step_threshold(scope, now)
-        if self.phase == "running":
-            return self._step_running(scope, now)
+        """Fait avancer la machine d'un pas ; jamais bloquant. Retourne 0..n événements.
+        Une erreur (scope débranché, délai réseau dépassé…) termine la série
+        proprement (:meth:`_abort`) au lieu de remonter : côté GUI, elle tuerait le
+        thread d'acquisition et figerait l'interface en « série armée »."""
+        try:
+            if self.phase == "start":
+                return self._step_start(scope, now)
+            if self.phase == "countdown":
+                return self._step_countdown(now)
+            if self.phase == "threshold":
+                return self._step_threshold(scope, now)
+            if self.phase == "running":
+                return self._step_running(scope, now)
+        except Exception as exc:  # noqa: BLE001 — toute erreur termine la série, proprement
+            return self._abort(exc)
         return []  # done/failed : plus rien à faire
+
+    def _abort(self, exc: Exception) -> list[SeriesEvent]:
+        """Fin sur erreur : les captures déjà faites sont conservées (meta écrit)."""
+        meta_path = None
+        if self.phase == "running":
+            try:
+                meta_path = write_series_meta(
+                    self.config, self.captures, ended_at=experiment.now_iso(self.wall_clock),
+                    scope_settings=self._scope_settings,
+                )
+            except Exception:  # noqa: BLE001 — meta impossible : on termine quand même
+                pass
+        self.result = RunResult(started=self.phase == "running", captures=self.captures,
+                                meta_path=meta_path)
+        self.phase = "failed"
+        return [SeriesEvent("failed", message=f"erreur pendant la série : {exc}")]
 
     # --- phases -----------------------------------------------------------------
     def _step_start(self, scope, now: float) -> list[SeriesEvent]:

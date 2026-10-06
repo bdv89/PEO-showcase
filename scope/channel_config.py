@@ -104,7 +104,7 @@ GUI_SETTINGS_PATH = CONFIG_PATH.with_name("gui_settings.json")
 # au rechargement. Chaîne vide pour un combo = garder l'élément par défaut du widget.
 GUI_SETTINGS_DEFAULTS = {
     "tab": 0,
-    "active_channels": [],
+    "active_channels": ["C2", "C3"],  # installation neuve : voies d'analyse cochées
     "vdiv": {},
     "coupling": {},
     "tdiv": "1MS",
