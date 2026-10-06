@@ -1,0 +1,32 @@
+[project]
+name = "siglent-sds1204xe"
+version = "0.1.0"
+description = "Pilotage SCPI multiplateforme du Siglent SDS1204X-E (PyVISA / pyvisa-py)"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pyvisa>=1.14",
+    "pyvisa-py>=0.7",
+    "psutil>=5.9",
+    "zeroconf>=0.131",
+    "numpy>=1.24",
+    "h5py>=3.10",
+    "scipy>=1.11",
+    "matplotlib>=3.7",
+    "pandas>=2.0",
+    "pyqtgraph>=0.13",
+    "PyQt5>=5.15",
+]
+
+[project.scripts]
+scope = "scope.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["scope"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

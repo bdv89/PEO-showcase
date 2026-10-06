@@ -1,0 +1,17 @@
+PEOscillo
+Copyright 2026 les contributeurs de PEOscillo
+
+Ce logiciel est distribué sous la licence Apache, version 2.0 (fichier LICENSE).
+
+Marque et logo Materianova
+--------------------------
+Le nom, le logo (scope/assets/logo_materianova.svg) et la charte graphique Materianova
+appartiennent à Materianova et sont utilisés avec son autorisation. Ils ne sont PAS
+couverts par la licence Apache 2.0 : leur réutilisation hors de ce projet nécessite
+l'accord de Materianova (cf. aussi l'article 6 de la licence, « Trademarks »).
+
+Dossier Windows autonome (Releases)
+-----------------------------------
+Le zip publié dans les Releases embarque Python et des bibliothèques tierces, chacune
+sous sa propre licence (fichiers de licence inclus dans python\Lib\site-packages\*.dist-info),
+notamment PyQt5 (GPL v3) et Qt (LGPL v3).

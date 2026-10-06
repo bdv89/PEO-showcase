@@ -1,0 +1,48 @@
+# TODO_v4 — Onglet Mesure lisible, départ au seuil, installation idempotente
+
+> Date : 2026-10-06 — session « peo-plateau-extraction ». Phase 0 : analyse de la colonne
+> Scope, choix validés en session (refonte sans assistant ; enregistrement dans la colonne
+> Expérience ; départ au seuil par défaut puis mémorisé ; seuil en volts du scope ;
+> U = C2 / I = C3 par défaut).
+
+## Constat
+- Codes SCPI bruts à l'écran (`2MV` lu « mégavolt », `1MS`, `A1M`, `POS`,
+  `now/countdown/threshold`) ; voies sans en-têtes (2 lignes × 4) ; tout dans une colonne.
+- Deux déclenchements concurrents (« Trigger » et « Seuil » du départ).
+- Départ « now » par défaut ; analyse U/I = C1/C2 alors que le montage PEO est C2/C3.
+- Lancement depuis les sources cassé par un `.venv` en Python 3.15 alpha (h5py sans wheel).
+
+## Réalisé (TDD)
+- [x] Libellés lisibles (`vdiv_label`, `tdiv_label`, `COUPLING_LABELS`, `SLOPE_LABELS`,
+      `START_MODE_LABELS`, `PER_UNIT_LABELS`), codes SCPI en `itemData` ; `trigger_level_scpi`
+      (« 0,5 » -> `0.5V`, ancien `1.0V` accepté).
+- [x] Colonne Scope en cadres : Acquisition, Voies (tableau à en-têtes), Base de temps et
+      affichage, Déclenchement, Capture ponctuelle.
+- [x] Cadre « Enregistrement » dans la colonne Expérience : cadence, durée, départ en boutons
+      radio (champs du mode seulement), seuil = Déclenchement (résumé en direct), analyse U/I
+      avec noms de voies.
+- [x] Réglages : `start_mode` = threshold, `analysis_u/i` = C2/C3, `start_timeout` ; anciennes
+      clés ignorées -> nouveaux défauts appliqués une fois, puis mémorisés.
+- [x] Thème : boutons d'un cadre invisibles (règle `QGroupBox > QWidget` transparente) et
+      boutons radio sans cercle -> corrigés.
+- [x] `install.ps1` (idempotent) + `INSTALL.md`.
+
+## Vérification
+- `tests/` : 315 OK, 1 skip.
+- Rendu offscreen avec le Python embarqué (faux worker, ancien `gui_settings.json`) :
+  départ au seuil, U/I = C2/C3, libellés, plus de débordement horizontal ; armement d'une
+  série -> `start_mode=threshold`, seuil `{C2, 0.5V, POS, 30 s}`, champs verrouillés.
+- `install.ps1` sur copie temporaire : 1er passage 43 s ; 2e passage 2 s sans changement ;
+  `.venv` 3.14 détecté et recréé en 3.12 ; `--check` OK (sources et dossier autonome).
+- Dossier Windows aligné sur les sources, `--check` OK.
+
+## Critique Prisme 1
+| Question | Réponse |
+|----------|---------|
+| Solution la plus simple ? | Oui : réorganisation des widgets existants, aucune logique d'acquisition modifiée (`series.py` inchangé) |
+| Abstractions prématurées ? | Non : 2 petits helpers Qt (`_coded_combo`, `_select_code`) utilisés partout |
+| Fonctionnalités spéculatives ? | Non : assistant écarté à la demande de l'utilisateur |
+
+## Reste
+- Essai sur matériel (scope réel) de la nouvelle colonne.
+- `.venv` de l'utilisateur à réparer en lançant `install.ps1`.

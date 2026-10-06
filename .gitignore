@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Journaux et réglages propres à un poste (IP du scope, dernière session)
+logs/
+launcher_config.json
+gui_settings.json
+
+# Dossier Windows autonome : publié en zip dans les Releases GitHub, pas dans git
+/Oscilloscope/
+/dist/
+packaging/_downloads/
+packaging/_wheelhouse/
+
+# Logiciels, firmware et documentation Siglent (propriétaires, non redistribuables)
+/vendor/
+/*.zip
+docs/siglent-sds-programming-guide.pdf
+inspiration/repos/
+
+# Données et sorties d'essais
+captures/
+PEO_*/
+resultats/

@@ -1,0 +1,17 @@
+# Dépendances runtime pour le dossier autonome Windows (packaging/build_embed.py).
+# Sous-ensemble de requirements.txt : sans pytest (inutile à l'usage) ni pyusb
+# (USB confirmé non fonctionnel sur ce scope -- bug firmware, cf. mémoire projet
+# -- et exigerait un driver libusb/Zadig sous Windows ; le LAN socket/VXI-11,
+# pur pyvisa-py, marche sans aucun driver). requirements.txt reste la référence
+# pour le développement (NixOS/venv).
+pyvisa>=1.14
+pyvisa-py>=0.7
+psutil>=5.9
+zeroconf>=0.131
+numpy>=1.24
+h5py>=3.10
+scipy>=1.11
+matplotlib>=3.7
+pandas>=2.0
+pyqtgraph>=0.13
+PyQt5>=5.15

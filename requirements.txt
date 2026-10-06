@@ -1,0 +1,16 @@
+# Dépendances Python (Windows / venv ; sur NixOS utiliser flake.nix ou shell.nix).
+# Backend pyvisa-py = Python pur, pas besoin de NI-VISA.
+pyvisa>=1.14
+pyvisa-py>=0.7
+pyusb>=1.2      # transport USBTMC (scope branché en USB) -- Windows : nécessite un
+                # driver USBTMC/NI-VISA ou libusb via Zadig ; Linux : libusb1 (cf. flake/shell.nix)
+psutil>=5.9
+zeroconf>=0.131
+numpy>=1.24
+h5py>=3.10
+scipy>=1.11
+matplotlib>=3.7
+pandas>=2.0      # extraction des plateaux (scope/plateaux.py, synthèse de fin de série)
+pyqtgraph>=0.13
+PyQt5>=5.15
+pytest>=8.0
