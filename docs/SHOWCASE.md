@@ -100,3 +100,28 @@ checksums, which also works for runs recorded before these features existed.
 | Isolated outlier capture | It is flagged `U_saut`, excluded from the synthesis and from the control-mode estimate. |
 | Durable regime change at constant current | It is reported as a rupture, and the data are kept. |
 | Instrument stops answering mid-run | The run ends cleanly, and the captures already taken and the metadata are preserved. |
+
+## ONGOING — An automatically built experimental database
+
+**Goal**: build the experimental database **automatically**, as a by-product of running the
+bench, with **each sample characterised in a unique and traceable way**. The database links
+every experiment to its analyses, and to the later characterisations of the same sample. No
+information is lost over the years, and data can be **exchanged without compromise**: with
+their full context and their integrity proofs, so that a partner lab can reuse them as if it
+had produced them.
+
+| Building block | Status |
+|---|---|
+| Unique, dated, frozen **experiment ID** per run (never overwritten) | Done — `scope/experiment.py` (`next_id`), `scope/series.py` |
+| **Sample ID**, material, preparation, bath and set-point in the experiment record | Done — fields of the record, stored in each run's `meta.json` |
+| **Integrity**: SHA-256 checksums of every raw file, verified before any re-analysis | Done — `scope/experiment.py` |
+| **Analysis provenance**: algorithm version, parameters and results recorded with each analysis | Done — `scope/experiment.py` (`record_analysis`) |
+| **Post-run results and attachments** (thickness, porosity, images…) linked to the run | Done — record dialog, stored in `meta.json` |
+| **Unique, persistent sample identity across runs and instruments** (one sample, many runs and characterisations) | Ongoing |
+| **Database index** built automatically from the run folders (sample ↔ runs ↔ analyses ↔ characterisations), queryable across years | Ongoing |
+| **Exchange format**: each run or sample exported with its context in a standard vocabulary (RO-Crate / JSON-LD, units, provenance) | Planned — see [ROADMAP](ROADMAP.md) |
+| Shared vocabulary with partner labs, so that exchanged data keep their meaning | Planned |
+
+The design principle stays the same as for each run today: the raw data are never modified.
+The database is an **index over self-describing runs**, so it can always be rebuilt from the run
+folders, and a run exported on its own remains complete.

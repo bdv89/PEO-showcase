@@ -4,6 +4,15 @@ What exists today is described in the [README](../README.md). The items below ar
 envisaged to turn PEOscillo into the acquisition and analysis stage of a closed-loop,
 AI-assisted PEO experimentation pipeline (see [RAISE_alignment.md](RAISE_alignment.md)).
 
+## ONGOING — Automatically built experimental database
+
+Characterise **each sample in a unique and traceable way** and build the experimental database
+automatically from the recorded runs: every experiment linked to its analyses and to the later
+characterisations of the same sample, so that **no information is lost over the years**, and
+runs can be **exchanged with partners without compromise** (full context, provenance,
+integrity proofs). Details and status:
+[SHOWCASE.md § ONGOING](SHOWCASE.md#ongoing--an-automatically-built-experimental-database).
+
 ## Data and metadata
 
 - **Standard metadata**: export each run as an **RO-Crate** (JSON-LD on schema.org) wrapping

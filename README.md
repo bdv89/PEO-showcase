@@ -33,6 +33,23 @@ from the experiment record to the control-mode estimate.
 | **Supervise** | Live analysis tab updated at every capture; one control sheet per run (every capture, detected plateaux highlighted, anomalies veiled in red) for a quick visual check. | `scope/gui.py`, `scope/plateaux.py` |
 | **Re-process** | Any recorded series (including legacy ones) re-analysed with the current algorithm, outputs written apart from the raw data. | `scope/experiment.py::reprocess`, `tools/extract_plateaux.py` |
 
+## Ongoing work: an experimental database that builds itself
+
+The current development aims at the **automatic constitution of an experimental database**, in
+which **each sample is characterised in a unique and traceable way**. The goal is twofold:
+
+- **Never lose information over the years** — every experiment stays linked to its analyses
+  (and to the post-run characterisations of the same sample), whoever ran it and whenever it
+  was re-analysed, instead of being scattered across files, notebooks and personal folders.
+- **Exchange data without compromise** — a run is shared together with its full context
+  (sample, process parameters, instrument settings, analysis provenance, integrity proofs),
+  so that a partner can reuse it without losing meaning or trust.
+
+Each run already carries the building blocks: a frozen, dated experiment ID, a sample ID in the
+experiment record, one self-describing `meta.json`, SHA-256 checksums, and the trace of every
+analysis (algorithm version and parameters). Details and status:
+[SHOWCASE.md § ONGOING](docs/SHOWCASE.md#ongoing--an-automatically-built-experimental-database).
+
 ## Built for the lab floor
 
 - **Retrofit, not replace** — a standard oscilloscope already present on the bench is the
